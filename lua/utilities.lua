@@ -34,35 +34,76 @@ function M.execute_macro_visual_range()
   print('@' .. vim.fn.getcmdline())
   local ch = vim.fn.getchar()
   if type(ch) == 'string' then
-    -- convert single-char string to its byte value so nr2char always receives an integer
     ch = ch:byte()
   end
-  vim.cmd("'<,'>normal @" .. vim.fn.nr2char(ch))
+  -- `normal`を`normal!`に変更
+  vim.cmd("'<,'>normal! @" .. vim.fn.nr2char(ch))
 end
 
 function M.ctrl_u()
-  if vim.fn.getcmdpos() > 1 then
-    vim.fn.setreg('-', vim.fn.getcmdline():sub(1, vim.fn.getcmdpos() - 2))
+  local cmdline_before = vim.fn.getcmdline()
+
+  if vim.fn.getcmdpos() <= 1 then
+    vim.api.nvim_feedkeys(
+      vim.api.nvim_replace_termcodes('<C-U>', true, false, true),
+      'n',
+      false
+    )
+    return
   end
-  return "\\<C-U>"
+
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes('<C-U>', true, false, true),
+    'n',
+    false
+  )
+
+  vim.defer_fn(function()
+    local cmdline_after = vim.fn.getcmdline()
+    local removed_text = cmdline_before:sub(1, #cmdline_before - #cmdline_after)
+    vim.fn.setreg('-', removed_text)
+  end, 0)
 end
 
-local cmdline_before_ctrl_w = ''
-function M.ctrl_w_before()
-  cmdline_before_ctrl_w = vim.fn.getcmdpos() > 1 and vim.fn.getcmdline() or ''
-  return "\\<C-W>"
+function M.ctrl_w()
+  local cmdline_before = vim.fn.getcmdline()
+  local cmdpos_before = vim.fn.getcmdpos()
+
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes('<C-W>', true, false, true),
+    'n',
+    false
+  )
+
+  vim.defer_fn(function()
+    local cmdline_after = vim.fn.getcmdline()
+    local cmdpos_after = vim.fn.getcmdpos()
+
+    if cmdline_before == cmdline_after then
+      return
+    end
+
+    local removed_text = cmdline_before:sub(cmdpos_after, cmdpos_before - 1)
+
+    vim.fn.setreg('-', removed_text)
+  end, 0) -- 0ms遅延（つまり即時実行）
 end
 
-function M.ctrl_w_after()
-  if #cmdline_before_ctrl_w > 0 then
-    local original_len = #cmdline_before_ctrl_w
-    local current_len = #vim.fn.getcmdline()
-    local removed = cmdline_before_ctrl_w:sub(vim.fn.getcmdpos(), vim.fn.getcmdpos() + (original_len - current_len) -1)
-    vim.fn.setreg('-', removed)
+function M.ctrl_k()
+  local cmdline = vim.fn.getcmdline()
+  local cmdpos = vim.fn.getcmdpos() -- 1-basedのバイト位置
+
+  local removed_text = cmdline:sub(cmdpos)
+
+  if #removed_text > 0 then
+    vim.fn.setreg('-', removed_text)
   end
-  return ''
+
+  local new_cmdline = cmdline:sub(1, cmdpos - 1)
+  vim.fn.setcmdline(new_cmdline)
 end
 
+-- search google ---------------------
 local function get_visual_selection()
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
@@ -79,7 +120,6 @@ local function get_visual_selection()
   return table.concat(lines, '\n')
 end
 
--- search google ---------------------
 function M.google_search()
   local vtext = get_visual_selection()
   local word = vim.fn.expand('<cword>')
@@ -150,12 +190,26 @@ function M.cmd_capture(args)
 end
 
 -- toggle function ---------------------
+local function count_and_highlight_word()
+  local original_view = vim.fn.winsaveview()
+  local word = vim.fn.expand("<cword>")
+  if word == "" then
+    vim.fn.winrestview(original_view)
+    return
+  end
+  local pattern = vim.fn.escape(word, [=[/\\.*$^[]%()]=])
+  vim.fn.setreg('/', pattern)
+  vim.v.hlsearch = 1 -- 明示的にハイライトをONにする
+  vim.cmd('silent %s///gn')
+
+  vim.fn.winrestview(original_view)
+end
+
 function M.hl_text_toggle()
   if vim.v.hlsearch ~= 0 then
     vim.cmd('noh')
   else
-    -- nmap <Plug>(my-hltoggle) mz<Esc>:%s/\(<C-r>=expand("<cword>")<Cr>\)//gn<CR>`z
-    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Plug>(my-hltoggle)', true, false, true), 'n', false)
+    count_and_highlight_word()
   end
 end
 
