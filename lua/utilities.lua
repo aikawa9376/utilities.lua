@@ -11,12 +11,15 @@ end
 
 -- gJで空白を削除する
 function M.join_space_less()
-  vim.cmd('normal! gj')
-  local m = vim.fn.matchstr(vim.fn.getline('.'), '\\%' .. vim.fn.col('.') .. 'c.')
-  -- Use Lua's %s in string.match to detect whitespace (vim regex was used above)
-  if m:match('%s') then
-    vim.cmd('normal! dw')
-  end
+  local last_search = vim.fn.getreg('/')
+  vim.cmd('normal! gJ')
+  local original_view = vim.fn.winsaveview()
+  local col = vim.fn.col('.')
+  local pattern = '\\%' .. col .. 'c\\s\\+'
+  vim.cmd('silent! s/' .. pattern .. '//e')
+  vim.cmd('nohlsearch')
+  vim.fn.setreg('/', last_search)
+  vim.fn.winrestview(original_view)
 end
 
 -- vimrcをスペースドットで更新
