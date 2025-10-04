@@ -318,4 +318,39 @@ function M.remove_line_brank_all(count)
   end
 end
 
+function M.get_git_completions()
+  local ok, result = pcall(function()
+    local candidates = {}
+
+    local branches = vim.fn.systemlist("git branch --format='%(refname:short)'")
+    for _, branch in ipairs(branches) do
+      if branch ~= '' then
+        candidates[branch] = true
+      end
+    end
+
+    local tags = vim.fn.systemlist('git tag')
+    for _, tag in ipairs(tags) do
+      if tag ~= '' then
+        candidates[tag] = true
+      end
+    end
+
+    candidates['HEAD'] = true
+
+    local completions = {}
+    for item, _ in pairs(candidates) do
+      table.insert(completions, item)
+    end
+
+    return completions
+  end)
+
+  if ok then
+    return result
+  else
+    return {}
+  end
+end
+
 return M
