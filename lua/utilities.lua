@@ -353,4 +353,27 @@ function M.get_git_completions()
   end
 end
 
+function M.tab_close_with_buffer()
+  local tab_count = vim.fn.tabpagenr('$')
+
+  local current_tab = vim.api.nvim_get_current_tabpage()
+  local tab_wins = vim.api.nvim_tabpage_list_wins(current_tab)
+  local tab_bufs = {}
+  for _, win in ipairs(tab_wins) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    tab_bufs[buf] = true
+  end
+
+  if tab_count > 1 then
+    vim.cmd("tabclose!")
+    for buf, _ in pairs(tab_bufs) do
+      if vim.api.nvim_buf_is_valid(buf) and vim.fn.bufwinnr(buf) == -1 then
+        pcall(vim.api.nvim_buf_delete, buf, { force = false })
+      end
+    end
+  else
+    vim.cmd("bdelete")
+  end
+end
+
 return M
