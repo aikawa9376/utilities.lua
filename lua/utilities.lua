@@ -320,28 +320,56 @@ end
 
 function M.get_git_completions()
   local ok, result = pcall(function()
-    local candidates = {}
+    local toplevel = (vim.fn.systemlist('git rev-parse --show-toplevel 2> /dev/null') or {})[1]
+    if not toplevel or toplevel == '' then
+      return {}
+    end
 
-    local branches = vim.fn.systemlist("git branch --format='%(refname:short)'")
-    for _, branch in ipairs(branches) do
-      if branch ~= '' then
-        candidates[branch] = true
+    vim.g.git_completions_cache = vim.g.git_completions_cache or {}
+    local cache_entry = vim.g.git_completions_cache[toplevel]
+    local TTL = 10 -- seconds
+    if cache_entry and (os.time() - (cache_entry.ts or 0) < TTL) and cache_entry.data then
+      return cache_entry.data
+    end
+
+    local function run(cmd)
+      local ok_cmd, res = pcall(vim.fn.systemlist, cmd)
+      if not ok_cmd or not res then
+        return {}
+      end
+      return res
+    end
+
+    local local_branches = run("git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/heads/")
+    local remote_branches = run("git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/remotes/")
+    local tags = run("git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags/")
+    if #tags == 0 then
+      tags = run("git tag --sort=-creatordate 2> /dev/null")
+      if #tags == 0 then
+        tags = run("git tag")
       end
     end
 
-    local tags = vim.fn.systemlist('git tag')
-    for _, tag in ipairs(tags) do
-      if tag ~= '' then
-        candidates[tag] = true
-      end
-    end
-
-    candidates['HEAD'] = true
-
+    local seen = {}
     local completions = {}
-    for item, _ in pairs(candidates) do
-      table.insert(completions, item)
+    local function add(list)
+      for _, v in ipairs(list) do
+        if v and v ~= '' and not seen[v] then
+          seen[v] = true
+          table.insert(completions, v)
+        end
+      end
     end
+
+    add(local_branches)
+    add(remote_branches)
+    add(tags)
+
+    if not seen['HEAD'] then
+      table.insert(completions, 'HEAD')
+    end
+
+    vim.g.git_completions_cache[toplevel] = { ts = os.time(), data = completions }
 
     return completions
   end)
