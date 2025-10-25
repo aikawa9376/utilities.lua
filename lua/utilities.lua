@@ -404,4 +404,23 @@ function M.tab_close_with_buffer()
   end
 end
 
+function M.copy_line_path()
+  local start_pos = vim.fn.getpos('v')
+  local end_pos = vim.fn.getpos('.')
+  local sline = tonumber(start_pos[2]) or vim.fn.line('.')
+  local eline = tonumber(end_pos[2]) or sline
+  if sline > eline then sline, eline = eline, sline end
+
+  local bufname = vim.api.nvim_buf_get_name(0)
+  local relpath = vim.fn.fnamemodify(bufname, ':.')
+  if relpath == '' then
+    relpath = vim.fn.expand('%:t')
+  end
+  local text = relpath .. ':' .. sline .. '-' .. eline
+
+  vim.fn.setreg('+', text)
+  vim.fn.setreg('"', text)
+  vim.notify('Copied: ' .. text, vim.log.levels.INFO)
+end
+
 return M
