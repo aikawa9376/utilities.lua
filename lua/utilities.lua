@@ -404,7 +404,7 @@ function M.tab_close_with_buffer()
   end
 end
 
-function M.copy_line_path()
+function M.copy_line_path(add_at_sign)
   local start_pos = vim.fn.getpos('v')
   local end_pos = vim.fn.getpos('.')
   local sline = tonumber(start_pos[2]) or vim.fn.line('.')
@@ -418,9 +418,65 @@ function M.copy_line_path()
   end
   local text = relpath .. ':' .. sline .. '-' .. eline
 
+  if add_at_sign then
+    text = '@' .. text
+  end
+
   vim.fn.setreg('+', text)
   vim.fn.setreg('"', text)
   vim.notify('Copied: ' .. text, vim.log.levels.INFO)
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(
+    '<Esc>',
+    true,
+    false,
+    true
+  ), 'n', false)
+end
+
+
+function M.copy_git_root_relative_path(add_at_sign)
+  local work_tree_list = vim.fn.systemlist('git rev-parse --work-tree 2> /dev/null')
+  if #work_tree_list == 0 or work_tree_list[1] == '' then
+    vim.notify('Not a git repository.', vim.log.levels.WARN)
+    return
+  end
+  local work_tree = work_tree_list[1]
+
+  local file_path = vim.fn.expand('%:p')
+  if file_path == '' then
+    vim.notify('No file name.', vim.log.levels.WARN)
+    return
+  end
+
+  -- Ensure work_tree has a trailing slash for pattern matching
+  local pattern = '^' .. vim.fn.escape(work_tree, '.*+?^$()[]%') .. '/'
+  local relative_path = file_path:gsub(pattern, '', 1)
+
+  local text = relative_path
+  if add_at_sign then
+    text = '@' .. text
+  end
+
+  vim.fn.setreg('+', text)
+  vim.fn.setreg('"', text)
+  vim.notify('Copied: ' .. text, vim.log.levels.INFO)
+end
+
+
+function M.smart_close()
+  local win_count = vim.fn.winnr('$')
+  local tab_count = vim.fn.tabpagenr('$')
+
+  if win_count > 1 then
+    -- More than one window in the current tab (split window)
+    vim.cmd('bdelete')
+  elseif tab_count > 1 then
+    -- Only one window in this tab, but more than one tab exists
+    vim.cmd('tabclose')
+  else
+    -- The very last window
+    vim.cmd('bwipeout')
+  end
 end
 
 return M
