@@ -479,4 +479,30 @@ function M.smart_close()
   end
 end
 
+function M.smart_paste(paste_func)
+  vim.opt.lazyredraw = true
+
+  local paste_operation = paste_func
+  if paste_operation == nil or type(paste_operation) ~= "function" then
+    paste_operation = function()
+      vim.cmd('silent! normal! p')
+    end
+  end
+
+  local original_view = vim.fn.winsaveview()
+  local success, err = pcall(function()
+    paste_operation()
+    vim.cmd("silent! normal! '[V']=")
+  end)
+
+  vim.fn.winrestview(original_view)
+
+  vim.opt.lazyredraw = false
+  vim.cmd('redraw')
+
+  if not success then
+    vim.notify("smart_paste failed: " .. tostring(err), vim.log.levels.ERROR)
+  end
+end
+
 return M
