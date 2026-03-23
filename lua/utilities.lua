@@ -479,7 +479,7 @@ function M.smart_close()
   end
 end
 
-function M.get_parent_git_root(dir)
+function M.get_parent_git_root(dir, callback)
   local function git(cwd, args)
     local result = vim.fn.systemlist("git -C " .. vim.fn.shellescape(cwd) .. " " .. args .. " 2>/dev/null")
     if vim.v.shell_error == 0 and result[1] and result[1] ~= "" then
@@ -488,36 +488,66 @@ function M.get_parent_git_root(dir)
     return nil
   end
 
-  local normalized_dir = vim.fn.fnamemodify(dir, ":p"):gsub("/$", "")
-
-  -- Case 1: submodule → superproject working tree
-  local superproject = git(dir, "rev-parse --show-superproject-working-tree")
-  if superproject then
-    return vim.fn.fnamemodify(superproject, ":p"):gsub("/$", "")
+  local function done(result)
+    if callback then
+      callback(result)
+    end
+    return result
   end
 
+  local normalized_dir = vim.fn.fnamemodify(dir, ":p"):gsub("/$", "")
+
+  local superproject = git(dir, "rev-parse --show-superproject-working-tree")
   local current_root = git(dir, "rev-parse --show-toplevel")
-  if not current_root then return nil end
+  if not current_root then return done(nil) end
   local normalized_root = vim.fn.fnamemodify(current_root, ":p"):gsub("/$", "")
+
+  -- Case 1: submodule → offer a choice between the submodule root and the superproject
+  if superproject then
+    local normalized_super = vim.fn.fnamemodify(superproject, ":p"):gsub("/$", "")
+    if callback then
+      vim.ui.select(
+        { normalized_root, normalized_super },
+        {
+          prompt = "Select parent git root:",
+          format_item = function(item) return item end,
+        },
+        function(choice)
+          callback(choice or nil)
+        end
+      )
+      return
+    end
+    local items = {
+      "Select parent git root:",
+      "1. " .. normalized_root,
+      "2. " .. normalized_super,
+    }
+    local idx = vim.fn.inputlist(items)
+    if idx == 1 then return normalized_root
+    elseif idx == 2 then return normalized_super
+    else return nil
+    end
+  end
 
   -- Case 2: monorepo - inside a package subdir, go up to git root
   if normalized_dir ~= normalized_root then
-    return normalized_root
+    return done(normalized_root)
   end
 
   -- Case 3: already at git root, check if parent belongs to another git repo
   local parent = vim.fn.fnamemodify(normalized_root, ":h")
-  if parent == normalized_root then return nil end
+  if parent == normalized_root then return done(nil) end
 
   local outer_root = git(parent, "rev-parse --show-toplevel")
   if outer_root then
     local normalized_outer = vim.fn.fnamemodify(outer_root, ":p"):gsub("/$", "")
     if normalized_outer ~= normalized_root then
-      return normalized_outer
+      return done(normalized_outer)
     end
   end
 
-  return nil
+  return done(nil)
 end
 
 function M.smart_paste(paste_func)
