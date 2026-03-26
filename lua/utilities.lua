@@ -479,7 +479,15 @@ function M.smart_close()
   end
 end
 
-function M.get_parent_git_root(dir, callback)
+M.git_parent_select_opts = {
+  prompt = "Select parent git root:",
+  format_item = function(item) return item end,
+}
+
+--- Git 親へジャンプするときの候補（同期・UIなし）。
+---@return { parent?: string, choose?: string[] }
+--- `parent` …確定の1件 / `choose` …サブモジュール＋モノレポ配下など2択（内側ルート, スーパープロジェクト）
+function M.git_parent_nav_context(dir)
   local function git(cwd, args)
     local result = vim.fn.systemlist("git -C " .. vim.fn.shellescape(cwd) .. " " .. args .. " 2>/dev/null")
     if vim.v.shell_error == 0 and result[1] and result[1] ~= "" then
@@ -488,66 +496,70 @@ function M.get_parent_git_root(dir, callback)
     return nil
   end
 
-  local function done(result)
-    if callback then
-      callback(result)
+  local function superproject_and_toplevel(cwd)
+    local lines = vim.fn.systemlist(
+      "git -C "
+        .. vim.fn.shellescape(cwd)
+        .. " rev-parse --show-superproject-working-tree --show-toplevel 2>/dev/null"
+    )
+    if vim.v.shell_error ~= 0 or not lines[1] or vim.trim(lines[1]) == "" then
+      return nil, nil
     end
-    return result
+    if #lines >= 2 and lines[2] and vim.trim(lines[2]) ~= "" then
+      return vim.trim(lines[1]), vim.trim(lines[2])
+    end
+    return nil, vim.trim(lines[1])
   end
 
   local normalized_dir = vim.fn.fnamemodify(dir, ":p"):gsub("/$", "")
 
-  local superproject = git(dir, "rev-parse --show-superproject-working-tree")
-  local current_root = git(dir, "rev-parse --show-toplevel")
-  if not current_root then return done(nil) end
-  local normalized_root = vim.fn.fnamemodify(current_root, ":p"):gsub("/$", "")
+  local superproject, repo_toplevel = superproject_and_toplevel(dir)
+  if not repo_toplevel then
+    return {}
+  end
+  local normalized_root = vim.fn.fnamemodify(repo_toplevel, ":p"):gsub("/$", "")
 
-  -- Case 1: submodule → offer a choice between the submodule root and the superproject
   if superproject then
     local normalized_super = vim.fn.fnamemodify(superproject, ":p"):gsub("/$", "")
-    if callback then
-      vim.ui.select(
-        { normalized_root, normalized_super },
-        {
-          prompt = "Select parent git root:",
-          format_item = function(item) return item end,
-        },
-        function(choice)
-          callback(choice or nil)
-        end
-      )
-      return
+    if normalized_dir == normalized_root then
+      return { parent = normalized_super }
     end
-    local items = {
-      "Select parent git root:",
-      "1. " .. normalized_root,
-      "2. " .. normalized_super,
-    }
-    local idx = vim.fn.inputlist(items)
-    if idx == 1 then return normalized_root
-    elseif idx == 2 then return normalized_super
-    else return nil
-    end
+    return { choose = { normalized_root, normalized_super } }
   end
 
-  -- Case 2: monorepo - inside a package subdir, go up to git root
   if normalized_dir ~= normalized_root then
-    return done(normalized_root)
+    return { parent = normalized_root }
   end
 
-  -- Case 3: already at git root, check if parent belongs to another git repo
   local parent = vim.fn.fnamemodify(normalized_root, ":h")
-  if parent == normalized_root then return done(nil) end
+  if parent == normalized_root then
+    return {}
+  end
 
   local outer_root = git(parent, "rev-parse --show-toplevel")
   if outer_root then
     local normalized_outer = vim.fn.fnamemodify(outer_root, ":p"):gsub("/$", "")
     if normalized_outer ~= normalized_root then
-      return done(normalized_outer)
+      return { parent = normalized_outer }
     end
   end
 
-  return done(nil)
+  return {}
+end
+
+--- 単一親が決まっていればそのままコールバック、二択なら `vim.ui.select` してからコールバック
+function M.get_parent_git_root(dir, callback)
+  if not callback then
+    return
+  end
+  local ctx = M.git_parent_nav_context(dir)
+  if ctx.choose then
+    vim.ui.select(ctx.choose, M.git_parent_select_opts, function(choice)
+      callback(choice or nil)
+    end)
+  else
+    callback(ctx.parent)
+  end
 end
 
 function M.smart_paste(paste_func)
