@@ -216,6 +216,52 @@ function M.hl_text_toggle()
   end
 end
 
+-- substitute word ---------------------
+local function literal_vim_pattern(text)
+  local escaped = vim.fn.escape(text, [[\/]])
+  escaped = escaped:gsub('\n', [[\n]]):gsub('\t', [[\t]])
+  return '\\V' .. escaped
+end
+
+local function literal_substitute_replacement(text)
+  local escaped = vim.fn.escape(text, [[\/&~]])
+  return escaped:gsub('\n', [[\r]]):gsub('\t', [[\t]])
+end
+
+local function open_substitute(text, prefill_replacement, range, leave_visual)
+  if text == '' then
+    return
+  end
+
+  local replacement = prefill_replacement and literal_substitute_replacement(text) or ''
+  local prefix = leave_visual and '<Esc>' or ''
+  local command = prefix
+    .. ':'
+    .. (range or '%')
+    .. 's/'
+    .. literal_vim_pattern(text)
+    .. '/'
+    .. replacement
+    .. '/g<Left><Left>'
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(command, true, false, true), 'n', false)
+end
+
+function M.open_word_substitute(prefill_replacement)
+  open_substitute(vim.fn.expand('<cword>'), prefill_replacement)
+end
+
+function M.open_visual_substitute(prefill_replacement)
+  local mode = vim.fn.mode()
+  if mode == 'V' then
+    local register_lines = vim.fn.getreg('+', true, true)
+    open_substitute(table.concat(register_lines, '\n'), prefill_replacement, [['<,'>]], true)
+    return
+  end
+
+  local lines = vim.fn.getregion(vim.fn.getpos('v'), vim.fn.getpos('.'), { type = mode })
+  open_substitute(table.concat(lines, '\n'), prefill_replacement, '%', true)
+end
+
 -- auto mkdir ---------------------
 function M.auto_mkdir(dir, force)
   if not vim.fn.isdirectory(dir) and (force or vim.fn.input(string.format('"%s" does not exist. Create? [y/N]', dir)):match('^[yY]')) then
