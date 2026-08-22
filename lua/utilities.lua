@@ -508,6 +508,75 @@ function M.copy_git_root_relative_path(add_at_sign)
   vim.notify('Copied: ' .. text, vim.log.levels.INFO)
 end
 
+local function copy_text(text, add_at_sign)
+  if add_at_sign then
+    text = '@' .. text
+  end
+
+  vim.fn.setreg('+', text)
+  vim.fn.setreg('"', text)
+  vim.notify('Copied: ' .. text, vim.log.levels.INFO)
+end
+
+local function git_root_for_path(path)
+  local dir = vim.fn.fnamemodify(path, ':h')
+  local result = vim.fn.systemlist(
+    'git -C ' .. vim.fn.shellescape(dir) .. ' rev-parse --show-toplevel 2> /dev/null'
+  )
+  if vim.v.shell_error ~= 0 or not result[1] or result[1] == '' then
+    return nil
+  end
+  return vim.fn.fnamemodify(result[1], ':p'):gsub('/$', '')
+end
+
+--- 現在のファイルパスの形式を選び、clipboard と unnamed register へコピーする。
+---@param add_at_sign? boolean `true` ならコピーするパスの先頭に `@` を付ける
+function M.copy_path(add_at_sign)
+  local path = vim.api.nvim_buf_get_name(0)
+  if path == '' then
+    vim.notify('No file name.', vim.log.levels.WARN)
+    return
+  end
+
+  local absolute_path = vim.fn.fnamemodify(path, ':p')
+  local choices = {
+    { label = 'Absolute', value = absolute_path },
+    { label = 'Relative (cwd)', value = vim.fn.fnamemodify(absolute_path, ':.') },
+  }
+
+  local git_root = git_root_for_path(absolute_path)
+  if git_root then
+    local prefix = git_root .. '/'
+    if absolute_path:sub(1, #prefix) == prefix then
+      table.insert(choices, {
+        label = 'Relative (git root)',
+        value = absolute_path:sub(#prefix + 1),
+      })
+    end
+  end
+
+  local home_relative_path = vim.fn.fnamemodify(absolute_path, ':~')
+  if home_relative_path ~= absolute_path then
+    table.insert(choices, { label = 'Relative (home)', value = home_relative_path })
+  end
+
+  table.insert(choices, {
+    label = 'File name',
+    value = vim.fn.fnamemodify(absolute_path, ':t'),
+  })
+
+  vim.ui.select(choices, {
+    prompt = 'Copy path:',
+    format_item = function(item)
+      return string.format('%-20s %s', item.label, item.value)
+    end,
+  }, function(choice)
+    if choice then
+      copy_text(choice.value, add_at_sign)
+    end
+  end)
+end
+
 
 function M.smart_close()
   local win_count = vim.fn.winnr('$')
