@@ -81,14 +81,51 @@ assert(vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].modified)
 assert(utilities.smart_close({ force = true }))
 assert(not vim.api.nvim_buf_is_loaded(buf))
 
--- All split windows showing a deleted buffer survive.
-buf = panel(); vim.cmd('vsplit')
-before = layout()
+-- Closing another view of a shared buffer must leave the original view alive.
+buf = panel(); local reused = vim.api.nvim_get_current_win(); vim.cmd('vsplit')
+local extra = vim.api.nvim_get_current_win()
 assert(utilities.smart_close())
-assert(vim.deep_equal(layout(), before) and #vim.fn.win_findbuf(buf) == 0)
+assert(not vim.api.nvim_win_is_valid(extra) and vim.api.nvim_win_is_valid(reused))
+assert(vim.api.nvim_buf_is_loaded(buf) and #vim.fn.win_findbuf(buf) == 1)
+vim.api.nvim_set_current_win(reused); assert(utilities.smart_close())
+assert(vim.api.nvim_win_is_valid(reused) and not vim.api.nvim_buf_is_loaded(buf))
 
 -- Closed source buffers fall back to a normal buffer without changing the layout.
 buf, source = panel(); vim.api.nvim_buf_delete(source, { force = true })
 before = layout(); assert(utilities.smart_close())
 assert(vim.deep_equal(layout(), before) and vim.bo.buftype == '')
-print('PASS: callbacks, cancellation, registration/replacement/unregister, overrides, custom actions, drafts and shared buffers')
+-- An application-created split closes, even after navigating within the view.
+vim.cmd('only')
+local origin = vim.api.nvim_get_current_win()
+before = layout()
+vim.cmd('belowright split')
+utilities.remember_smart_close({ source_win = origin, created = true })
+local created = vim.api.nvim_get_current_win()
+buf = vim.api.nvim_create_buf(false, true); vim.api.nvim_set_current_buf(buf)
+utilities.remember_smart_close({ preserve = true })
+assert(utilities.smart_close())
+assert(not vim.api.nvim_win_is_valid(created) and vim.deep_equal(layout(), before))
+assert(vim.api.nvim_get_current_win() == origin)
+
+-- Reusing a preexisting tab must not close it just because it has one window.
+vim.cmd('tabnew')
+local existing_tab = vim.api.nvim_get_current_tabpage()
+local existing_win = vim.api.nvim_get_current_win()
+source = vim.api.nvim_get_current_buf()
+utilities.remember_smart_close()
+buf = vim.api.nvim_create_buf(false, true); vim.api.nvim_set_current_buf(buf)
+assert(utilities.smart_close())
+assert(vim.api.nvim_get_current_tabpage() == existing_tab and vim.api.nvim_get_current_win() == existing_win)
+assert(vim.api.nvim_get_current_buf() == source)
+vim.cmd('tabclose')
+
+-- A newly created dedicated tab still closes.
+origin = vim.api.nvim_get_current_win()
+vim.cmd('tabnew')
+local created_tab = vim.api.nvim_get_current_tabpage()
+utilities.remember_smart_close({ source_win = origin, created = true })
+buf = vim.api.nvim_create_buf(false, true); vim.api.nvim_set_current_buf(buf)
+assert(utilities.smart_close())
+assert(not vim.api.nvim_tabpage_is_valid(created_tab) and vim.api.nvim_get_current_win() == origin)
+
+print('PASS: created-window close, reused-window/tab restore, shared views, callbacks, drafts and return state')

@@ -578,7 +578,7 @@ function M.copy_path(add_at_sign)
 end
 
 
----Close the current buffer while preserving ordinary window splits.
+---Close the current window, restoring the previous buffer when the window was reused.
 function M.smart_close(opts)
   return require('utilities.smart_close').close(opts)
 end

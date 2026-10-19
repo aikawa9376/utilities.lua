@@ -2,17 +2,19 @@
 
 ## Smart close
 
-`require('utilities').smart_close()` replaces the current buffer while retaining
-ordinary split windows. It restores a remembered source buffer, then tries the
-alternate buffer, a recently used normal buffer, and finally an empty buffer.
-A floating window or a dedicated tab with one regular window closes normally.
+`require('utilities').smart_close()` normally closes the current window. A panel
+that reused an existing window restores its previous buffer, cursor/scroll, and
+local display options instead. Closing one view leaves other views of the same
+buffer alive. The last editor window falls back to another or an empty buffer.
 Modified buffers are protected unless `force = true` is supplied.
 
-Call `remember_smart_close()` before replacing a window's buffer to restore its
-source, cursor/scroll position, and local display options when closing. After
-creating a panel split, `remember_smart_close({ source_win = source_win })` can
-capture another window's source. `preserve = true` retains an existing return
-target during navigation within a panel.
+Call `remember_smart_close()` before replacing an existing window's buffer.
+For a newly created split or tab, call
+`remember_smart_close({ source_win = source_win, created = true })` after creating
+it; its window closes on exit. If `created` is omitted, a different `source_win`
+implies a new window. `preserve = true` retains this ownership and return target
+during navigation within a panel. Floats always close their window. A reused
+window remains open even when it is the only window in a preexisting tab.
 
 ```lua
 local utilities = require('utilities')

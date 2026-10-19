@@ -9,18 +9,20 @@ vim.api.nvim_create_autocmd('WinClosed', {
 })
 
 ---Remember the buffer, view and local display options to restore in this window.
----@param opts? { source_win?: integer, preserve?: boolean }
+---@param opts? { source_win?: integer, created?: boolean, preserve?: boolean }
 function M.remember(opts)
   opts = opts or {}
   local win = vim.api.nvim_get_current_win()
   if opts.preserve and returns[win] then return end
   local source = opts.source_win or win
+  local created = opts.created
+  if created == nil then created = source ~= win end
   local options = {}
   for _, name in ipairs(option_names) do
     options[name] = vim.api.nvim_get_option_value(name, { win = source, scope = 'local' })
   end
   returns[win] = { buf = vim.api.nvim_win_get_buf(source), options = options,
-    view = vim.api.nvim_win_call(source, vim.fn.winsaveview) }
+    view = vim.api.nvim_win_call(source, vim.fn.winsaveview), source_win = source, created = created }
 end
 
 ---Register a named resolver. Newest matching resolver wins; nil means no match.
@@ -46,12 +48,16 @@ local function available(buf, closing)
 end
 
 local function default_close(ctx, opts)
-  local config = vim.api.nvim_win_get_config(ctx.win)
-  if config.relative ~= '' or config.external then
-    vim.api.nvim_win_close(ctx.win, opts.force or false)
+  local saved = returns[ctx.win]
+  local function delete_hidden()
     if not opts.keep_buffer and vim.api.nvim_buf_is_valid(ctx.buf) and #vim.fn.win_findbuf(ctx.buf) == 0 then
       vim.api.nvim_buf_delete(ctx.buf, { force = opts.force or false })
     end
+  end
+  local config = vim.api.nvim_win_get_config(ctx.win)
+  if config.relative ~= '' or config.external then
+    vim.api.nvim_win_close(ctx.win, opts.force or false)
+    delete_hidden()
     return true
   end
   local count = 0
@@ -59,16 +65,16 @@ local function default_close(ctx, opts)
     local candidate = vim.api.nvim_win_get_config(win)
     if candidate.relative == '' and not candidate.external then count = count + 1 end
   end
-  if count == 1 and #vim.api.nvim_list_tabpages() > 1 then
-    vim.cmd('tabclose' .. (opts.force and '!' or ''))
-    if not opts.keep_buffer and vim.api.nvim_buf_is_valid(ctx.buf) and #vim.fn.win_findbuf(ctx.buf) == 0 then
-      vim.api.nvim_buf_delete(ctx.buf, { force = opts.force or false })
+  if (not saved or saved.created) and (count > 1 or #vim.api.nvim_list_tabpages() > 1) then
+    vim.api.nvim_win_close(ctx.win, opts.force or false)
+    delete_hidden()
+    if saved and vim.api.nvim_win_is_valid(saved.source_win) then
+      vim.api.nvim_set_current_win(saved.source_win)
     end
     return true
   end
 
-  local windows = opts.keep_buffer and { ctx.win } or vim.fn.win_findbuf(ctx.buf)
-  for _, win in ipairs(windows) do
+  for _, win in ipairs({ ctx.win }) do
     local saved = returns[win]
     local replacement = opts.replacement and opts.replacement(vim.tbl_extend('force', ctx, { win = win }))
     if not available(replacement, ctx.buf) then replacement = saved and saved.buf end
@@ -95,13 +101,11 @@ local function default_close(ctx, opts)
       vim.api.nvim_win_call(win, function() vim.fn.winrestview(saved.view) end)
     end
   end
-  if not opts.keep_buffer and vim.api.nvim_buf_is_valid(ctx.buf) then
-    vim.api.nvim_buf_delete(ctx.buf, { force = opts.force or false })
-  end
+  delete_hidden()
   return true
 end
 
----Close buffers while preserving splits; dedicated tabs and floats close normally.
+---Close windows by default; a remembered reused window restores its prior buffer.
 ---before(ctx) may return false to cancel; after(ctx) runs only after success.
 ---close(ctx, default_close) can replace or delegate the close action.
 ---replacement(ctx) selects a buffer for each affected window.
