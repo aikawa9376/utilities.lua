@@ -578,20 +578,19 @@ function M.copy_path(add_at_sign)
 end
 
 
-function M.smart_close()
-  local win_count = vim.fn.winnr('$')
-  local tab_count = vim.fn.tabpagenr('$')
+---Close the current buffer while preserving ordinary window splits.
+function M.smart_close(opts)
+  return require('utilities.smart_close').close(opts)
+end
 
-  if win_count > 1 then
-    -- More than one window in the current tab (split window)
-    vim.cmd('bdelete')
-  elseif tab_count > 1 then
-    -- Only one window in this tab, but more than one tab exists
-    vim.cmd('tabclose')
-  else
-    -- The very last window
-    vim.cmd('bwipeout')
-  end
+---Capture the return buffer and display options before opening a panel.
+function M.remember_smart_close(opts)
+  return require('utilities.smart_close').remember(opts)
+end
+
+---Register plugin-specific smart-close options; returns an unregister function.
+function M.register_smart_close(name, callback)
+  return require('utilities.smart_close').register(name, callback)
 end
 
 M.git_parent_select_opts = {
